@@ -23,6 +23,34 @@ Supports Flatpak's RemoteDesktop portal (for Wayland), X11, macOS and Windows.
     go install github.com/unrud/remote-touchpad@latest
     ```
 
+### niri and other compositors without the RemoteDesktop portal
+
+Control on Wayland normally goes through the `org.freedesktop.portal.RemoteDesktop`
+portal, which only works if the compositor implements Mutter's remote desktop
+interface. niri does not (yet), so the portal controller fails there.
+
+This fork's Flatpak is built with the `uinput` controller and grants access to
+`/dev/uinput` (`--device=all`), so it falls back to creating a virtual keyboard
+and mouse that the compositor picks up like real hardware. `kbd`'s `loadkeys`
+is bundled for keymap support.
+
+Build the Flatpak locally with:
+
+```sh
+flatpak-builder --user --install --force-clean build-dir \
+  flatpak/com.github.unrud.RemoteTouchpad.yaml
+```
+
+If you build with the sandboxed `org.flatpak.Builder` instead, export and install
+from the host afterwards: the builder rewrites the exported `.desktop` file with
+its own sandboxed `flatpak` path, which breaks launching from the app menu.
+
+```sh
+flatpak build-export host-repo .build-dir master
+flatpak remote-add --user --no-gpg-verify local-repo "file://$PWD/host-repo"
+flatpak install --user local-repo com.github.unrud.RemoteTouchpad
+```
+
 ## Screenshots
 
 ![screenshot 1](https://raw.githubusercontent.com/Unrud/remote-touchpad/master/screenshots/1.png)

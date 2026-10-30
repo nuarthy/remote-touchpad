@@ -1,0 +1,4 @@
+.build-dir/
+.builder-state/
+.builder-repo/
+.host-repo/

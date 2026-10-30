@@ -10,7 +10,25 @@ finish-args:
   - --socket=wayland
   - --share=ipc # Required by Flathub linter
   - --share=network
+  # Exposes /dev/uinput so the uinput controller can create a virtual
+  # keyboard/mouse. Required on compositors that don't implement the
+  # RemoteDesktop portal (e.g. niri).
+  - --device=all
 modules:
+  # The uinput controller converts a console keymap with `loadkeys` at runtime.
+  # The freedesktop runtime doesn't ship kbd, so bundle loadkeys + the keymaps.
+  - name: kbd
+    buildsystem: simple
+    build-commands:
+      - ./configure --prefix=/app --datadir=/app/share/kbd --disable-nls --disable-vlock
+      - make -j${FLATPAK_BUILDER_N_JOBS:-1}
+      - install -Dm0755 src/loadkeys /app/bin/loadkeys
+      - install -d /app/share/kbd
+      - cp -a data/keymaps /app/share/kbd/keymaps
+    sources:
+      - type: archive
+        url: https://www.kernel.org/pub/linux/utils/kbd/kbd-2.6.4.tar.xz
+        sha256: 519f8d087aecca7e0a33cd084bef92c066eb19731666653dcc70c9d71aa40926
   - name: remote-touchpad
     sources:
       - type: git
@@ -34,12 +52,17 @@ modules:
         tag: v0.48.0
         commit: 613e2570718ecde85c04e69ebd5585c3881c442c
         dest: vendor/golang.org/x/sys
+      - type: git
+        url: https://github.com/bendahl/uinput
+        tag: v1.7.0
+        commit: 1f73a2b8d6668e58dad1f05e3268870f269b074d
+        dest: vendor/github.com/bendahl/uinput
       - type: file
         path: modules.txt
         dest: vendor
     buildsystem: simple
     build-commands:
-      - . /usr/lib/sdk/golang/enable.sh; go build -tags portal,x11
+      - . /usr/lib/sdk/golang/enable.sh; go build -tags portal,uinput,x11
       - install -Dm0755 -t /app/bin remote-touchpad
       - install -Dm0755 -t /app/bin desktop/remote-touchpad-wait-on-error
       - install -Dm0644 -t /app/share/metainfo desktop/com.github.unrud.RemoteTouchpad.metainfo.xml
