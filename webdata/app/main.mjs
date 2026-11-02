@@ -25,19 +25,39 @@ const url = new URL("ws", location.href);
 url.protocol = url.protocol == "http:" ? "ws:" : "wss:";
 
 const secret = location.hash.substr(1);
-const socket = new Socket(url, secret);
-const inputController = new InputController(socket);
-const ui = new UI(inputController);
+let socket = null;
+let inputController = null;
+let ui = null;
 
-socket.addEventListener("config", (event) => {
-    const config = event.detail;
-    inputController.configure(config);
-    ui.configure(config);
-});
+const start = () => {
+    socket = new Socket(url, secret);
+    inputController = new InputController(socket);
+    ui = new UI(inputController);
 
-socket.addEventListener("close", () => {
-    ui.close();
-});
+    socket.addEventListener("config", (event) => {
+        const config = event.detail;
+        inputController.configure(config);
+        ui.configure(config);
+    });
+
+    socket.addEventListener("close", () => {
+        ui.close();
+    });
+
+    window.app = {
+        key: inputController.keyboardKey.bind(inputController),
+        text: inputController.keyboardText.bind(inputController),
+        toggleFullscreen: ui.toggleFullscreen.bind(ui),
+        showTextInput: ui.showTextInput.bind(ui),
+        showKeys: ui.showKeys.bind(ui),
+        setKeysPage: ui.setKeysPage.bind(ui),
+    };
+    for (const name in inputcontrollerModule) {
+        if (name.startsWith("KEY_")) {
+            window.app[name] = inputcontrollerModule[name];
+        }
+    }
+};
 
 window.addEventListener("hashchange", () => {
     if (secret !== location.hash.substr(1)) {
@@ -45,16 +65,11 @@ window.addEventListener("hashchange", () => {
     }
 });
 
-window.app = {
-    key: inputController.keyboardKey.bind(inputController),
-    text: inputController.keyboardText.bind(inputController),
-    toggleFullscreen: ui.toggleFullscreen.bind(ui),
-    showTextInput: ui.showTextInput.bind(ui),
-    showKeys: ui.showKeys.bind(ui),
-    setKeysPage: ui.setKeysPage.bind(ui),
-};
-for (const name in inputcontrollerModule) {
-    if (name.startsWith("KEY_")) {
-        window.app[name] = inputcontrollerModule[name];
-    }
+// Connect only after the document has loaded. The WebSocket is a request that
+// never finishes, and opening it while the page is still loading keeps some
+// browsers (notably iOS WebKit based ones) showing an endless loading bar.
+if (document.readyState == "complete") {
+    start();
+} else {
+    window.addEventListener("load", start, {once: true});
 }

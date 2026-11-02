@@ -56,7 +56,8 @@ export default class InputController {
     #scrollVSum = 0;
     #scrolling = false;
     #scrollFinish = false;
-    #updateTimeoutActive = false;
+    #updateTimeout = null;
+    #lastUpdateTime = 0;
     #socket;
 
     constructor(socket) {
@@ -67,19 +68,43 @@ export default class InputController {
         this.#updateRate = config.updateRate;
     }
 
-    #startUpdate(fromTimeout = false) {
-        if (this.#updateTimeoutActive && !fromTimeout) {
+    #hasPendingUpdate() {
+        return Math.trunc(this.#moveXSum) != 0 || Math.trunc(this.#moveYSum) != 0 ||
+            Math.trunc(this.#scrollHSum) != 0 || Math.trunc(this.#scrollVSum) != 0 ||
+            (this.#scrollFinish && this.#scrolling);
+    }
+
+    // Coalesce input events into evenly spaced updates. Sending on every
+    // touchmove produces irregular, bursty traffic (and therefore jitter);
+    // a fixed cadence is smoother for the same or fewer packets.
+    #scheduleUpdate() {
+        if (!(this.#updateRate > 0)) {
+            this.#flushUpdate();
             return;
         }
-        this.#updateTimeoutActive = false;
-        let finished = true;
+        if (this.#updateTimeout != null) {
+            return;
+        }
+        const interval = 1000 / this.#updateRate;
+        const wait = this.#lastUpdateTime + interval - performance.now();
+        if (wait <= 0) {
+            this.#flushUpdate();
+            return;
+        }
+        this.#updateTimeout = setTimeout(() => {
+            this.#updateTimeout = null;
+            this.#flushUpdate();
+        }, wait);
+    }
+
+    #flushUpdate() {
+        this.#lastUpdateTime = performance.now();
         const xInt = Math.trunc(this.#moveXSum);
         const yInt = Math.trunc(this.#moveYSum);
         if (xInt != 0 || yInt != 0) {
             this.#socket.send(`${COMMAND_POINTER_MOVE}${xInt};${yInt}`);
             this.#moveXSum -= xInt;
             this.#moveYSum -= yInt;
-            finished = false;
         }
         const hInt = Math.trunc(this.#scrollHSum);
         const vInt = Math.trunc(this.#scrollVSum);
@@ -93,29 +118,30 @@ export default class InputController {
             this.#scrollVSum -= vInt;
             this.#scrolling = !this.#scrollFinish;
             this.#scrollFinish = false;
-            finished = false;
         } else if (this.#scrollFinish && this.#scrolling) {
             this.#socket.send(COMMAND_POINTER_SCROLL_FINISHED);
             this.#scrolling = false;
             this.#scrollFinish = false;
         }
-        this.#updateTimeoutActive = !finished && this.#updateRate > 0;
-        if (this.#updateTimeoutActive) {
-            setTimeout(this.#startUpdate.bind(this), 1000 / this.#updateRate, true);
+        if (this.#updateRate > 0 && this.#hasPendingUpdate()) {
+            this.#updateTimeout = setTimeout(() => {
+                this.#updateTimeout = null;
+                this.#flushUpdate();
+            }, 1000 / this.#updateRate);
         }
     }
 
     pointerMove(deltaX, deltaY) {
         this.#moveXSum += deltaX;
         this.#moveYSum += deltaY;
-        this.#startUpdate();
+        this.#scheduleUpdate();
     }
 
     pointerScroll(deltaHorizontal, deltaVertical, finish) {
         this.#scrollHSum += deltaHorizontal;
         this.#scrollVSum += deltaVertical;
         this.#scrollFinish = this.#scrolling && this.#scrollFinish || finish;
-        this.#startUpdate();
+        this.#scheduleUpdate();
     };
 
     pointerButton(button, press) {

@@ -24,10 +24,12 @@ const TOUCH_MOVE_THRESHOLD = [10, 15, 15];
 // Max time between consecutive touches for clicking or dragging (as milliseconds)
 const TOUCH_TIMEOUT = 250;
 // [[pixel/second, multiplicator], ...]
+// No damping below 1x: slow, precise drags move 1:1 instead of being
+// scaled down (which felt sticky/jittery on high-DPI phones).
+// Restore the upstream curve with [[0, 0], [87, 1], [173, 1], [553, 2]].
 const POINTER_ACCELERATION = [
-    [0, 0],
+    [0, 1],
     [87, 1],
-    [173, 1],
     [553, 2],
 ];
 
@@ -209,8 +211,14 @@ export default class Touchpad {
             const dx = touches[i].pageX - this.#ongoingTouches[idx].pageX;
             const dy = touches[i].pageY - this.#ongoingTouches[idx].pageY;
             const timeDelta = event.timeStamp - this.#ongoingTouches[idx].timeStamp;
-            sumX += dx * calculateAccelerationMult(Math.abs(dx) / timeDelta * 1000);
-            sumY += dy * calculateAccelerationMult(Math.abs(dy) / timeDelta * 1000);
+            if (timeDelta > 0) {
+                const speed = 1000 / timeDelta;
+                sumX += dx * calculateAccelerationMult(Math.abs(dx) * speed);
+                sumY += dy * calculateAccelerationMult(Math.abs(dy) * speed);
+            } else {
+                sumX += dx;
+                sumY += dy;
+            }
             this.#ongoingTouches[idx].pageX = touches[i].pageX;
             this.#ongoingTouches[idx].pageY = touches[i].pageY;
             this.#ongoingTouches[idx].timeStamp = event.timeStamp;
